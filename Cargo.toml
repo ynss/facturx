@@ -1,0 +1,14 @@
+[package]
+name = "facturx"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Factur-X for the French e-invoicing reform."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ynss/facturx"
+readme = "README.md"
+keywords = ["factur-x", "einvoicing", "invoice", "france"]
+categories = ["finance"]
+
+[dependencies]
+roxmltree = "0.21.2"
