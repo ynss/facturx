@@ -3,7 +3,7 @@
 Factur-X for the French e-invoicing reform, in Rust.
 
 Version 0.1 detects which Factur-X profile an invoice declares in its guideline
-identifier. Every valid profile is recognised, including identifiers in their
+identifier. Known profiles are recognised, including identifiers in their
 ZUGFeRD spelling.
 
 ```rust
@@ -12,7 +12,7 @@ let xml = std::fs::read_to_string("factur-x.xml")
 
 match facturx::Profile::from_xml(&xml) {
     Some(profile) => println!("profile: {}", profile.name()),
-    None => println!("no profile declared"),
+    None => println!("not a readable CII invoice"),
 }
 ```
 

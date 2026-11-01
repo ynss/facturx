@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-11-01
+
+### Fixed
+
+- `Profile::from_xml` checks XML namespaces and the root element.
+
+### Changed
+
+- `Profile::from_xml` returns `None` only when the input is not a readable CII invoice; a
+  missing or empty identifier gives `Profile::Unknown`.
+
 ## [0.1.0] - 2026-10-31
 
 Initial release.

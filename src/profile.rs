@@ -1,6 +1,27 @@
 //! Factur-X profile detection from the invoice's guideline identifier.
 
-use crate::xml::first_text_by_local;
+use crate::xml::{RAM, RSM, first_text};
+
+const CII_ROOT: (&str, &str) = (RSM, "CrossIndustryInvoice");
+
+const GUIDELINE_PATH: &[(&str, &str)] = &[
+    (RSM, "ExchangedDocumentContext"),
+    (RAM, "GuidelineSpecifiedDocumentContextParameter"),
+    (RAM, "ID"),
+];
+
+// `_FX`: Factur-X spelling, `_ZF`: ZUGFeRD spelling of the same identifier.
+const MINIMUM_FX: &str = "urn:factur-x.eu:1p0:minimum";
+const MINIMUM_ZF: &str = "urn:zugferd.de:2p0:minimum";
+const BASICWL_FX: &str = "urn:factur-x.eu:1p0:basicwl";
+const BASICWL_ZF: &str = "urn:zugferd.de:2p0:basicwl";
+const BASIC_FX: &str = "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic";
+const BASIC_ZF: &str = "urn:cen.eu:en16931:2017#compliant#urn:zugferd.de:2p0:basic";
+const EN16931: &str = "urn:cen.eu:en16931:2017";
+const EXTENDED_FX: &str = "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended";
+const EXTENDED_ZF: &str = "urn:cen.eu:en16931:2017#conformant#urn:zugferd.de:2p0:extended";
+const EXTENDED_CTC_FR: &str =
+    "urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr";
 
 /// A Factur-X profile, as named by the invoice's guideline identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -13,27 +34,21 @@ pub enum Profile {
     Extended,
     /// The French CTC profile.
     ExtendedCtcFr,
-    /// The guideline identifier is present but is not a Factur-X profile.
+    /// The guideline identifier is missing, empty, or not a known profile.
     Unknown,
 }
 
 impl Profile {
-    /// Read the profile an invoice declares in its CII XML (the XML inside a
-    /// Factur-X PDF), from its guideline identifier.
+    /// The profile a CII invoice declares in its guideline identifier.
     ///
-    /// Returns `None` when the text is not well-formed XML or declares no
-    /// guideline identifier; otherwise the profile, which is
-    /// `Some(Profile::Unknown)` when the identifier is not a known profile. The
-    /// identifier is read as is, never trimmed.
+    /// `None` when the text is not a readable CII invoice. A missing, empty or unknown
+    /// identifier gives `Some(Profile::Unknown)`; the identifier is never trimmed.
     #[must_use]
     pub fn from_xml(xml: &str) -> Option<Profile> {
-        let guideline = first_text_by_local(xml, GUIDELINE_PATH)?;
+        let guideline = first_text(xml, CII_ROOT, GUIDELINE_PATH)?;
         Some(Profile::from_guideline(&guideline))
     }
 
-    /// Work out the profile from the guideline identifier. Every valid Factur-X
-    /// profile is recognised; anything else is `Unknown`. The match is exact, as
-    /// in the official rules: a padded value is `Unknown`.
     fn from_guideline(guideline: &str) -> Profile {
         match guideline {
             MINIMUM_FX | MINIMUM_ZF => Profile::Minimum,
@@ -48,7 +63,7 @@ impl Profile {
 
     /// A short display name, e.g. `"EN16931"`.
     #[must_use]
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &'static str {
         match self {
             Profile::Minimum => "MINIMUM",
             Profile::BasicWl => "BASIC WL",
@@ -61,35 +76,13 @@ impl Profile {
     }
 }
 
-const GUIDELINE_PATH: &[&str] = &[
-    "ExchangedDocumentContext",
-    "GuidelineSpecifiedDocumentContextParameter",
-    "ID",
-];
-
-// Every guideline identifier, in both the Factur-X and the ZUGFeRD spelling (two
-// names for the same standard). Verified against the spec and the example
-// invoices.
-const MINIMUM_FX: &str = "urn:factur-x.eu:1p0:minimum";
-const MINIMUM_ZF: &str = "urn:zugferd.de:2p0:minimum";
-const BASICWL_FX: &str = "urn:factur-x.eu:1p0:basicwl";
-const BASICWL_ZF: &str = "urn:zugferd.de:2p0:basicwl";
-const BASIC_FX: &str = "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic";
-const BASIC_ZF: &str = "urn:cen.eu:en16931:2017#compliant#urn:zugferd.de:2p0:basic";
-const EN16931: &str = "urn:cen.eu:en16931:2017";
-const EXTENDED_FX: &str = "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended";
-const EXTENDED_ZF: &str = "urn:cen.eu:en16931:2017#conformant#urn:zugferd.de:2p0:extended";
-const EXTENDED_CTC_FR: &str =
-    "urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr";
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Literal identifiers copied from the official spec files, not the constants
-    // above, so a typo in a constant makes this test fail.
+    // Literal strings, not the constants, so a typo in a constant fails the test.
     #[test]
-    fn detects_every_valid_profile_in_both_spellings() {
+    fn detects_known_profiles_in_both_spellings() {
         assert_eq!(
             Profile::from_guideline("urn:factur-x.eu:1p0:minimum"),
             Profile::Minimum
@@ -176,11 +169,8 @@ mod tests {
 
     #[test]
     fn from_xml_does_not_trim_the_guideline() {
-        // The official rule reads the identifier as is and rejects a padded value
-        // (FX-SCH-A-000556), so a padded value is not a profile.
         let padded = "\n      urn:cen.eu:en16931:2017\n    ";
         assert_eq!(Profile::from_xml(&invoice(padded)), Some(Profile::Unknown));
-        // Blank is a wrong value too (FX-SCH-A-000556), not a missing one.
         assert_eq!(Profile::from_xml(&invoice("   ")), Some(Profile::Unknown));
     }
 
@@ -199,14 +189,23 @@ mod tests {
     }
 
     #[test]
-    fn from_xml_is_none_without_a_guideline() {
-        let no_guideline = r#"<rsm:CrossIndustryInvoice
-    xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100">
-  <rsm:ExchangedDocumentContext/>
-</rsm:CrossIndustryInvoice>"#;
-        assert_eq!(Profile::from_xml(no_guideline), None);
-        // An empty identifier element is missing (BR-01).
-        assert_eq!(Profile::from_xml(&invoice("")), None);
+    fn from_xml_reads_the_whole_text_around_comments() {
+        assert_eq!(
+            Profile::from_xml(&invoice("<!--c-->urn:cen.eu:en16931:2017")),
+            Some(Profile::En16931)
+        );
+        assert_eq!(
+            Profile::from_xml(&invoice("urn:cen.eu:<!--c-->en16931:2017")),
+            Some(Profile::En16931)
+        );
+        assert_eq!(
+            Profile::from_xml(&invoice("<![CDATA[urn:cen.eu:en16931:2017]]>")),
+            Some(Profile::En16931)
+        );
+    }
+
+    #[test]
+    fn from_xml_is_none_when_not_a_readable_cii_invoice() {
         assert_eq!(Profile::from_xml("not xml at all"), None);
         assert_eq!(
             Profile::from_xml(
@@ -214,5 +213,30 @@ mod tests {
             ),
             None
         );
+        let id = "urn:cen.eu:en16931:2017";
+        let no_namespace = format!(
+            "<Pizza><ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>{id}</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext></Pizza>"
+        );
+        assert_eq!(Profile::from_xml(&no_namespace), None);
+        let wrong_namespace = format!(
+            r#"<x:CrossIndustryInvoice xmlns:x="urn:evil"><x:ExchangedDocumentContext><x:GuidelineSpecifiedDocumentContextParameter><x:ID>{id}</x:ID></x:GuidelineSpecifiedDocumentContextParameter></x:ExchangedDocumentContext></x:CrossIndustryInvoice>"#
+        );
+        assert_eq!(Profile::from_xml(&wrong_namespace), None);
+        let other_root = invoice(id).replace("rsm:CrossIndustryInvoice", "rsm:Other");
+        assert_eq!(Profile::from_xml(&other_root), None);
+        let with_doctype = format!("<!DOCTYPE x>{}", invoice(id));
+        assert_eq!(Profile::from_xml(&with_doctype), None);
+    }
+
+    #[test]
+    fn from_xml_is_unknown_without_a_guideline() {
+        let no_guideline = r#"<rsm:CrossIndustryInvoice
+    xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100">
+  <rsm:ExchangedDocumentContext/>
+</rsm:CrossIndustryInvoice>"#;
+        assert_eq!(Profile::from_xml(no_guideline), Some(Profile::Unknown));
+        assert_eq!(Profile::from_xml(&invoice("")), Some(Profile::Unknown));
+        let id_in_rsm = invoice("urn:cen.eu:en16931:2017").replace("ram:ID", "rsm:ID");
+        assert_eq!(Profile::from_xml(&id_in_rsm), Some(Profile::Unknown));
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "facturx"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Factur-X for the French e-invoicing reform."
@@ -9,6 +9,7 @@ repository = "https://github.com/ynss/facturx"
 readme = "README.md"
 keywords = ["factur-x", "einvoicing", "invoice", "france"]
 categories = ["finance"]
+exclude = [".gitignore"]
 
 [dependencies]
 roxmltree = "0.21.2"
